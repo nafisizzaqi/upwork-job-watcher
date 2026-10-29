@@ -1,0 +1,73 @@
+poll_interval_seconds: 600
+max_jobs_per_run: 5
+dry_run: true
+filters:
+  payment_verified: true
+  sort: newest
+  location: worldwide
+  job_types: [hourly, fixed]
+  min_fixed_budget_usd: 100
+  min_hourly_rate_usd: 20
+  excluded_client_countries: [Pakistan, Bangladesh, Sri Lanka, India]
+  max_proposals: 20
+  proposal_ranges: [less_than_5, 5_to_10, 10_to_15, 15_to_20]
+  max_job_age_hours: 1
+  min_client_rating: 4.0
+  max_unhired_jobs: 50
+  max_detail_checks_per_run: 10
+  skip_if_offered: true
+
+keywords:
+  shopify:
+    [
+      shopify,
+      shopify marketing,
+      shopify plus,
+      shopify development,
+      shopify website design,
+      shopify theme,
+      shopify template,
+      shopify liquid,
+    ]
+  frontend_web: [next.js, carrd, fullstack]
+  backend_saas: [laravel, symfony, saas development]
+  ai: [ai implementation]
+  fullstack_languages:
+    [
+      vue.js,
+      angular,
+      svelte,
+      typescript,
+      node.js,
+      go developer,
+      python,
+      django,
+      fastapi,
+      express.js,
+      nestjs,
+      php,
+      java,
+      spring boot,
+      graphql,
+      rest api development,
+    ]
+blacklist:
+  [
+    wordpress,
+    data entry,
+    appointment setter,
+    ReactOS,
+    liquidated,
+    liquidation,
+    business development,
+    sales development,
+    lead generation,
+    GoHighLevel,
+  ]
+notifications:
+  telegram_enabled: true
+  discord_enabled: true
+  notify_on_found: true
+  notify_on_analyzing: true
+  notify_on_draft_ready: true
+  notify_on_error: true

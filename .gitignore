@@ -1,0 +1,29 @@
+# Secrets - NEVER commit these
+.env
+.upwork_token*.json
+.upwork_token - Copy.json
+*.db
+*.sqlite3
+
+# Generated outputs
+drafts/
+logs/
+jobs_live.json
+jobs_real.json
+jobs_filtered.json
+dashboard_history.jsonl
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node / Next.js
+node_modules/
+dashboard/node_modules/
+dashboard/.next/
+.next/
+
+# Backups and archives
+*.bak
+arsip/
