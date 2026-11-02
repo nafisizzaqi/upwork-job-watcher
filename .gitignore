@@ -12,6 +12,7 @@ jobs_live.json
 jobs_real.json
 jobs_filtered.json
 dashboard_history.jsonl
+passed_jobs.jsonl
 
 # Python
 .venv/
@@ -27,3 +28,4 @@ dashboard/.next/
 # Backups and archives
 *.bak
 arsip/
+call_budget.json

@@ -45,6 +45,10 @@ BANNED_WORDS = [
     "extensive",
     "years of experience",
     "track record",
+    "i will",
+    "i'll",
+    "i'd",
+    "i would",
 ]
 GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
 
@@ -551,6 +555,136 @@ def budget_display(job):
     return f"${amount:,.0f} (fixed)"
 
 
+_TIER_LABELS = {
+    "fewer than 5": "< 5",
+    "5 to 10": "5–10",
+    "10 to 15": "10–15",
+    "15 to 20": "15–20",
+    "20 to 50": "20–50",
+    "50+": "50+",
+}
+
+
+def _tier_label(tier_raw):
+    return _TIER_LABELS.get(str(tier_raw or "").strip().lower(), str(tier_raw or "").strip())
+
+
+def _fmt_g(value, default=None):
+    n = _num_from(value)
+    if n is None:
+        return default
+    return f"{n:g}"
+
+
+def _draft_caption(job, detail, label, path):
+    det = detail or {}
+    label_name = str(label or "").strip().capitalize() or "Draft"
+    lines = []
+    lines.append(f"✅ DRAFT SIAP — {label_name.upper()}")
+    lines.append("")
+    lines.append(str(job.get("title") or ""))
+    lines.append("")
+    lines.append(f"💰 Budget: {budget_display(job)}")
+    lines.append(f"📍 Lokasi: {job.get('country') or '-'}")
+    age = job.get("age_hours")
+    if age is not None:
+        try:
+            age_txt = f"{float(age):.1f}".replace(".", ",")
+            lines.append(f"🕐 Umur job: {age_txt} jam lalu")
+        except (TypeError, ValueError):
+            pass
+    tier = _tier_label(job.get("proposals_tier"))
+    if tier:
+        lines.append(f"💬 Proposal masuk: {tier}")
+    kws = job.get("matched_keywords") or []
+    if kws:
+        lines.append(f"🔑 Keyword: {', '.join(str(k) for k in kws)}")
+    lines.append("")
+    lines.append("👤 Client")
+    rating = _fmt_g(job.get("rating_num"))
+    if rating is not None:
+        lines.append(f"⭐ Rating: {rating}")
+    hire = _fmt_g(det.get("hire_rate_percent"))
+    posted = _fmt_g(det.get("jobs_posted"))
+    if hire is not None:
+        hire_txt = f"📌 Hire rate: {hire}%"
+        if posted is not None:
+            hire_txt += f" · {posted} posting"
+        lines.append(hire_txt)
+    unhired = _fmt_g(det.get("unhired"))
+    if unhired is not None:
+        lines.append(f"🚫 Posting tanpa hire: {unhired}")
+    if det:
+        invites = _fmt_g(det.get("invites_sent"), 0)
+        hired = _fmt_g(det.get("total_hired"), 0)
+        interviewed = _fmt_g(det.get("total_interviewed"), 0)
+        lines.append(f"📨 Aktivitas: invites {invites} · hired {hired} · interview {interviewed}")
+    spent = _parse_money(job.get("total_spent"))
+    if spent is not None:
+        lines.append(f"💵 Total spend: ${spent:,.2f}")
+    lines.append("")
+    lines.append(f"📄 File: {path}")
+    url = _clean_url(job.get("url"))
+    if url:
+        lines.append(f"🔗 Link: {url}")
+    lines.append("")
+    lines.append("⚠️ Cek manual sebelum dipakai:")
+    lines.append("• Preferred qualifications")
+    lines.append("• Budget")
+    lines.append("• History freelancer")
+    return "\n".join(lines)
+
+
+def _draft_embed_parts(job, detail, label, path):
+    det = detail or {}
+    label_name = str(label or "").strip().capitalize() or "Draft"
+    when = datetime.now().strftime("%H:%M")
+    description = f"✅ Draft siap — {label_name} · {when} WIB"
+    fields = []
+    fields.append({"name": "Budget", "value": budget_display(job), "inline": True})
+    fields.append({"name": "Lokasi", "value": str(job.get("country") or "-"), "inline": True})
+    rating = _fmt_g(job.get("rating_num"))
+    if rating is not None:
+        fields.append({"name": "Rating", "value": f"{rating} ⭐", "inline": True})
+    hire = _fmt_g(det.get("hire_rate_percent"))
+    posted = _fmt_g(det.get("jobs_posted"))
+    if hire is not None:
+        hire_val = f"{hire}%"
+        if posted is not None:
+            hire_val += f" · {posted} posting"
+        fields.append({"name": "Hire rate", "value": hire_val, "inline": True})
+    tier = _tier_label(job.get("proposals_tier"))
+    if tier:
+        fields.append({"name": "Proposal masuk", "value": tier, "inline": True})
+    age = job.get("age_hours")
+    if age is not None:
+        try:
+            age_txt = f"{float(age):.1f}".replace(".", ",")
+            fields.append({"name": "Umur job", "value": f"{age_txt} jam lalu", "inline": True})
+        except (TypeError, ValueError):
+            pass
+    if det:
+        invites = _fmt_g(det.get("invites_sent"), 0)
+        hired = _fmt_g(det.get("total_hired"), 0)
+        interviewed = _fmt_g(det.get("total_interviewed"), 0)
+        fields.append({"name": "Aktivitas", "value": f"invites {invites} · hired {hired} · interview {interviewed}", "inline": False})
+    unhired = _fmt_g(det.get("unhired"))
+    if unhired is not None:
+        fields.append({"name": "Posting tanpa hire", "value": unhired, "inline": True})
+    spent = _parse_money(job.get("total_spent"))
+    if spent is not None:
+        fields.append({"name": "Total spend", "value": f"${spent:,.2f}", "inline": True})
+    kws = job.get("matched_keywords") or []
+    if kws:
+        fields.append({"name": "Keyword", "value": ", ".join(str(k) for k in kws), "inline": True})
+    fields.append({"name": "File", "value": path, "inline": False})
+    url = _clean_url(job.get("url"))
+    if url:
+        fields.append({"name": "Link", "value": url, "inline": False})
+    footer = "⚠️ Cek manual: preferred qualifications · budget · history freelancer"
+    return description, fields, footer
+
+
 def telegram_send_file(path, caption):
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -599,13 +733,25 @@ def discord_send(text):
         return None
 
 
-def discord_send_embed(title, description, color=0xE74C3C):
+def _discord_embed_dict(title, description, color, fields=None, footer=None):
+    embed = {"title": title[:256], "description": description[:4096], "color": color}
+    if fields:
+        embed["fields"] = [
+            {"name": str(f.get("name", ""))[:256], "value": str(f.get("value", ""))[:1024], "inline": bool(f.get("inline", False))}
+            for f in fields
+        ][:25]
+    if footer:
+        embed["footer"] = {"text": str(footer)[:2048]}
+    return embed
+
+
+def discord_send_embed(title, description, color=0xE74C3C, fields=None, footer=None):
     url = _discord_webhook()
     if not url:
         return None
     try:
         import json
-        r = requests.post(url, json={"embeds": [{"title": title[:256], "description": description[:4096], "color": color}]}, timeout=30)
+        r = requests.post(url, json={"embeds": [_discord_embed_dict(title, description, color, fields, footer)]}, timeout=30)
         print(f"Discord embed: {r.status_code}")
         return r.status_code
     except Exception as e:
@@ -613,13 +759,13 @@ def discord_send_embed(title, description, color=0xE74C3C):
         return None
 
 
-def discord_send_file(path, title, description, color=0x2ECC71):
+def discord_send_file(path, title, description, color=0x2ECC71, fields=None, footer=None):
     url = _discord_webhook()
     if not url:
         return None
     try:
         import json
-        payload = {"embeds": [{"title": title[:256], "description": description[:4096], "color": color}]}
+        payload = {"embeds": [_discord_embed_dict(title, description, color, fields, footer)]}
         with open(path, "rb") as fh:
             r = requests.post(url, data={"payload_json": json.dumps(payload)}, files={"file": (os.path.basename(path), fh)}, timeout=60)
         print(f"Discord file: {r.status_code}")
@@ -744,17 +890,17 @@ def build_prompt(job, keywords, detail):
         "(2) anything the client asks to include, such as experience or stores worked on, "
         "(3) screening questions the client asks applicants to answer. "
         "If the matched keyword is only incidental to this job (a passing mention, a nice-to-have, "
-        "or the job is migrating away from it), reply with exactly: SKIP and nothing else. "
-        "Otherwise reply with exactly three sections, each label on its own line, in this order: "
-        "PROPOSAL, QUESTIONS, EDITOR NOTE - DO NOT SUBMIT. No other headings. "
+        "or the job is migrating away from it), reply with exactly one line: SKIP, a colon, and one short sentence stating the single main mismatch, for example: SKIP: the core work is Meta Pixel conversion tracking, Shopify is only context. "
+        "Otherwise reply with exactly four sections, each label on its own line, in this order: "
+        "PROPOSAL, QUESTIONS, PORTFOLIO NOTE - DO NOT SUBMIT, EDITOR NOTE - DO NOT SUBMIT. No other headings. "
         "PROPOSAL section rules: plain paragraphs separated by blank lines, simple clear English, "
-        "no bold, no italics, no markdown except bullet lines for work examples only. "
+        "no bold, no italics, no markdown. "
         "If an opener is required, it goes on the very first line by itself, then a blank line, then 'Hi,'. "
         "If no opener is required, start with 'Hi,'. "
         "The opening paragraph must, within its first 250 characters, state the SOLUTION directly, "
-        "never restate the client's problem. Then a paragraph about the relevant work, followed by "
-        "the line 'Here are two examples of my work:' and exactly two bullet placeholder lines, "
-        "'- [Work example link to be added during manual edit]', with no URLs, no passwords, no invented links. "
+        "never restate the client's problem. Then a paragraph about the relevant work. "
+        "Do NOT mention portfolio, work examples, example links, or past stores anywhere in the PROPOSAL: "
+        "no 'examples of my work' line, no placeholder bullets, no URLs, no passwords, no invented links. "
         "Then a paragraph of concrete steps tailored to this job's requirements, starting with checking the current setup. "
         "Then an honest paragraph: name the strongest relevant work area plainly, then transparently disclose "
         "every named tool, platform, or role in the requirements that goes beyond it as not confirmed hands-on experience, "
@@ -765,6 +911,8 @@ def build_prompt(job, keywords, detail):
         "Never claim years of work, past clients, results, numbers, portfolio, or certifications. "
         "Never use these words: experienced, expert, specialist, professional, proven, skilled, extensive, "
         "years of experience, track record. Never promise a result, ranking, or sales outcome. "
+        "Voice rule: state the solution with direct present-tense capability language. 'I can' followed by the concrete solution is the natural opening pattern. Do NOT repeat 'I can' in every paragraph: vary later sentences with other direct phrasings that fit the job. NEVER use the phrases I will, I'll, I'd, or I would anywhere in the draft. "
+        "Style example (copy only its voice, never its job details): 'I can trace the four JavaScript and leftover app-code errors to their root causes, restore Add to Cart and product options, and verify the fixes against your testing checklist without disrupting other theme functionality. First, the browser console, relevant theme scripts, and leftover app code get inspected for what interferes with product interactions. Fixes stay targeted, no broad changes that could introduce new issues. Then Add to Cart, product option selection, and related interactions get tested against your checklist, with regression checks before the work counts as complete.' "
         "Budget rule: the stated budget is shown below as 'Budget: ...'. If it says 'tidak dinyatakan' (not stated), never invent a price or estimate. "
         "If the description asks for a price estimate, include the line '[Price estimate to be added during manual edit]' in the PROPOSAL and state in the EDITOR NOTE that the budget was not stated and an estimate placeholder was included. "
         "If the description does not ask for one, do not discuss price at all; pricing can be discussed later. "
@@ -773,8 +921,13 @@ def build_prompt(job, keywords, detail):
         "in the same honest tone as the proposal. A question about certifications is answered: "
         "'I don't hold certifications related to this project.' If no screening questions were found, write: "
         "'No screening questions were included in this job posting.' "
-        "EDITOR NOTE - DO NOT SUBMIT section rules: bullet lines listing what portfolio or work examples this job needs "
-        "and what would be relevant to add, which opener or include-instructions were obeyed, and which gaps were disclosed. "
+        "PORTFOLIO NOTE - DO NOT SUBMIT section rules: first state whether the job description or screening questions ask the applicant to include or send portfolio, work examples, links, or samples, quoting the request briefly. "
+        "Then state exactly what portfolio or work examples to attach when the human editor submits: the type of work, platform, and niche that matches this job, described concretely so the editor can pick the right items. "
+        "If nothing is requested, write only that no portfolio was requested and nothing needs to be attached, and do not suggest any portfolio items. "
+        "Never invent links, URLs, passwords, store names, or results; describe only what to attach, never the items themselves. "
+        "This section is only for the human editor and must never be submitted. "
+        "EDITOR NOTE - DO NOT SUBMIT section rules: bullet lines listing which opener or include-instructions were obeyed, "
+        "and which gaps were disclosed. Do not repeat portfolio guidance here; portfolio belongs only in the PORTFOLIO NOTE section. "
         "This section is only for the human editor and must never be submitted.\n\n"
         f"Job title: {job['title']}\n"
         f"Budget: {budget_txt} | Client country: {job['country']}\n"
@@ -787,8 +940,27 @@ def build_prompt(job, keywords, detail):
 
 
 def _draft_complete(text):
-    need = ["PROPOSAL", "QUESTIONS", "EDITOR NOTE", "Best regards", "Dana"]
+    need = ["PROPOSAL", "QUESTIONS", "PORTFOLIO NOTE", "EDITOR NOTE", "Best regards", "Dana"]
     return all(s in text for s in need)
+
+
+def _parse_skip(text):
+    """Return (is_skip, reason). Accepts bare SKIP and SKIP: <one-line reason>."""
+    if not isinstance(text, str):
+        return False, ""
+    s = text.strip()
+    if not s:
+        return False, ""
+    if s.upper() == "SKIP":
+        return True, ""
+    first = s.splitlines()[0].strip()
+    if first.upper().startswith("SKIP:"):
+        return True, first[5:].strip()[:160]
+    if first.upper().startswith("SKIP -"):
+        return True, first[6:].strip()[:160]
+    if first.upper() == "SKIP" and len(s.splitlines()) > 1:
+        return True, s.splitlines()[1].strip()[:160]
+    return False, ""
 
 
 def gemini_draft(job, keywords, detail):
@@ -828,8 +1000,9 @@ def gemini_draft(job, keywords, detail):
                     last_err = f"{model} empty response"
                     print(f"Gemini {model} mengembalikan teks kosong, coba lagi.")
                     continue
-                if text == "SKIP":
-                    return "SKIP", model
+                _is_skip, _skip_why = _parse_skip(text)
+                if _is_skip:
+                    return ("SKIP: " + _skip_why) if _skip_why else "SKIP", model
                 if not text.startswith("PROPOSAL"):
                     text = "PROPOSAL\n" + text
                 if not _draft_complete(text):
@@ -839,6 +1012,10 @@ def gemini_draft(job, keywords, detail):
                 low = text.lower()
                 hits = [w for w in BANNED_WORDS if w in low]
                 if hits:
+                    if attempt == 0:
+                        last_err = f"{model} kata terlarang {hits}"
+                        print(f"Gemini {model} kena kata terlarang {hits}, coba ulang sekali.")
+                        continue
                     print(f"Peringatan kata terlarang di draft: {hits} (tetap disimpan, cek manual).")
                 return text, model
             except Exception as e:
@@ -898,8 +1075,9 @@ def groq_draft(job, keywords, detail):
                     last_err = f"{model} empty response"
                     print(f"Groq {model} mengembalikan teks kosong, coba lagi.")
                     continue
-                if text == "SKIP":
-                    return "SKIP", model
+                _is_skip, _skip_why = _parse_skip(text)
+                if _is_skip:
+                    return ("SKIP: " + _skip_why) if _skip_why else "SKIP", model
                 if not text.startswith("PROPOSAL"):
                     text = "PROPOSAL\n" + text
                 if not _draft_complete(text):
@@ -909,6 +1087,10 @@ def groq_draft(job, keywords, detail):
                 low = text.lower()
                 hits = [w for w in BANNED_WORDS if w in low]
                 if hits:
+                    if attempt == 0:
+                        last_err = f"{model} kata terlarang {hits}"
+                        print(f"Groq {model} kena kata terlarang {hits}, coba ulang sekali.")
+                        continue
                     print(f"Peringatan kata terlarang di draft: {hits} (tetap disimpan, cek manual).")
                 return text, model
             except Exception as e:
@@ -948,6 +1130,19 @@ def client_line(job, detail):
 
 
 # ---------- MCP (Upwork) ----------
+
+class SearchRestrictedError(Exception):
+    pass
+
+
+def _is_error_response(d):
+    if not isinstance(d, dict):
+        return False
+    if d.get("status") == "error":
+        return True
+    if "error_code" in d:
+        return True
+    return isinstance(d.get("error"), str)
 
 def _extract_dict(result):
     if isinstance(result, dict):
@@ -998,7 +1193,48 @@ async def _raw_call(client, name, arguments):
         return await client.call_tool(name, arguments)
 
 
+BUDGET_FILE = "call_budget.json"
+_mcp_delay = 5.0
+_budget_hour = 140
+_budget_day = 700
+
+
+def _budget_load():
+    try:
+        with open(BUDGET_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _budget_check_and_record():
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    hour_key = now.strftime("%Y-%m-%dT%H")
+    day_key = now.strftime("%Y-%m-%d")
+    st = _budget_load()
+    if st.get("hour_key") != hour_key:
+        st["hour_key"] = hour_key
+        st["hour_count"] = 0
+    if st.get("day_key") != day_key:
+        st["day_key"] = day_key
+        st["day_count"] = 0
+    hour_count = int(st.get("hour_count", 0))
+    day_count = int(st.get("day_count", 0))
+    if hour_count >= _budget_hour or day_count >= _budget_day:
+        raise RuntimeError(
+            f"Anggaran panggilan habis: {hour_count}/{_budget_hour} per jam, {day_count}/{_budget_day} per hari"
+        )
+    st["hour_count"] = hour_count + 1
+    st["day_count"] = day_count + 1
+    with open(BUDGET_FILE, "w", encoding="utf-8") as f:
+        json.dump(st, f)
+
 async def _call_tool(client, name, arguments):
+    await asyncio.sleep(_mcp_delay)
+    _budget_check_and_record()
     try:
         return await _raw_call(client, name, arguments)
     except Exception as e:
@@ -1186,7 +1422,7 @@ class McpSession:
                 "title": keyword,
                 "verified_payment_only": True,
                 "sort": "recency",
-                "proposals_max": 20,
+                "proposals_max": 50,
                 "limit": per_page,
                 "include_full_details": True,
             }
@@ -1198,6 +1434,8 @@ class McpSession:
                 {"action": "search", "org_uid": self.org_uid, "params": params},
             )
             d = _extract_dict(res)
+            if _is_error_response(d):
+                raise SearchRestrictedError(str(d)[:300])
             jobs = _extract_jobs(d) or []
             if not jobs:
                 break
@@ -1246,16 +1484,21 @@ class McpSession:
                 "params": {"id": str(job_id), "include_full_details": True},
             },
         )
-        return _extract_dict(res)
+        d = _extract_dict(res)
+        if _is_error_response(d):
+            raise SearchRestrictedError(str(d)[:300])
+        return d
 
 
 # ---------- main ----------
 
 HISTORY_FILE = "dashboard_history.jsonl"
+PASSED_FILE = "passed_jobs.jsonl"
 
 
-def _record_history(run_id, run_at, job, verdict, reason, detail, drafts):
+def _record_history(run_id, run_at, job, verdict, reason, detail, drafts, history_file=None, trim=True):
     try:
+        target = history_file or HISTORY_FILE
         det = detail or {}
         try:
             url = _clean_url(job.get("url") or "")
@@ -1271,6 +1514,7 @@ def _record_history(run_id, run_at, job, verdict, reason, detail, drafts):
             "budget_unknown": bool(job.get("budget_unknown")),
             "proposals_tier": job.get("proposals_tier") or "",
             "age_hours": job.get("age_hours"),
+            "posted_at": job.get("published_date") or job.get("created_date") or None,
             "rating": job.get("rating_num") if job.get("rating_num") is not None else job.get("rating"),
             "verification_status": job.get("verification_status") or "",
             "keywords": list(job.get("matched_keywords") or []),
@@ -1286,24 +1530,54 @@ def _record_history(run_id, run_at, job, verdict, reason, detail, drafts):
             "spend": det.get("spend_total"),
             "drafts": list(drafts or []),
         }
-        with open(HISTORY_FILE, "a", encoding="utf-8") as fh:
+        with open(target, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + chr(10))
-        if os.path.getsize(HISTORY_FILE) > 2000000:
-            with open(HISTORY_FILE, encoding="utf-8") as fh:
+        if trim and os.path.getsize(target) > 2000000:
+            with open(target, encoding="utf-8") as fh:
                 lines = fh.readlines()
-            with open(HISTORY_FILE, "w", encoding="utf-8") as fh:
+            with open(target, "w", encoding="utf-8") as fh:
                 fh.writelines(lines[-3000:])
     except Exception as e:
         print(f"History gagal dicatat: {e}")
 
 
+def _record_passed(run_id, run_at, job, verdict, reason, detail, drafts):
+    try:
+        job_id = str(job.get("id") or "")
+        if not job_id:
+            return
+        try:
+            with open(PASSED_FILE, encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        if json.loads(line).get("job_id") == job_id:
+                            return
+                    except Exception:
+                        continue
+        except FileNotFoundError:
+            pass
+        _record_history(run_id, run_at, job, verdict, reason, detail, drafts, history_file=PASSED_FILE, trim=False)
+    except Exception as e:
+        print(f"Passed gagal dicatat: {e}")
+
+
 async def amain(args):
     cfg = load_config()
     filters = filter_settings(cfg)
+    global _mcp_delay, _budget_hour, _budget_day
+    _mcp_delay = float(cfg.get("mcp_delay_seconds", 5))
+    _budget_hour = int(cfg.get("budget_per_hour", 140))
+    _budget_day = int(cfg.get("budget_per_day", 700))
     run_at = datetime.now(timezone.utc).isoformat()
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     keywords_all = flat_keywords(cfg)
-    if args.max_keywords:
+    if args.group:
+        import math
+
+        size = math.ceil(len(keywords_all) / max(1, args.groups))
+        keywords = keywords_all[(args.group - 1) * size : args.group * size]
+        print(f"Grup {args.group}/{args.groups}: {len(keywords)} kata kunci")
+    elif args.max_keywords:
         keywords = keywords_all[: args.max_keywords]
     else:
         keywords = keywords_all
@@ -1353,6 +1627,9 @@ async def amain(args):
                 print(f"Search: {kw} ...")
                 try:
                     found = await sess.search_keyword(kw, limit_per_keyword, filters)
+                except SearchRestrictedError:
+                    print("AKSES PENCARIAN DIBATASI — berhenti, jangan retry.")
+                    raise
                 except Exception as e:
                     print(f"Search gagal ({kw}): {e}")
                     continue
@@ -1407,6 +1684,9 @@ async def amain(args):
                 try:
                     raw_detail = await sess.get_detail(job["id"])
                     detail = parse_detail(raw_detail)
+                except SearchRestrictedError:
+                    print("AKSES PENCARIAN DIBATASI — berhenti, jangan retry.")
+                    raise
                 except Exception as e:
                     print(f"DETAIL TOLAK: {job['title']} | get detail gagal: {e}")
                     mark_seen("seen_jobs.db", job["id"], "rejected_detail", job["title"])
@@ -1454,12 +1734,17 @@ async def amain(args):
         return
 
     if to_draft and not from_file:
+        _when = datetime.now().strftime("%H:%M")
         telegram_send(
-            f"Upwork scanner: {len(to_draft)} job baru lolos filter dari {len(raw_for_save)} job. "
-            "Menganalisis draft..."
+            "🔍 JOB BARU LOLOS FILTER\n\n"
+            f"{len(to_draft)} job baru lolos dari {len(raw_for_save)} job yang dicek.\n"
+            "Draftnya sedang dibuat, tunggu kabar berikutnya.\n"
+            f"🕐 {_when} WIB"
         )
-        discord_send(
-            f"Upwork scanner: {len(to_draft)} job baru lolos filter dari {len(raw_for_save)} job. Menganalisis draft..."
+        discord_send_embed(
+            "🔍 Job baru lolos filter",
+            f"{len(to_draft)} dari {len(raw_for_save)} job yang dicek · draft sedang dibuat · {_when} WIB",
+            color=0x3498DB,
         )
     draft_count = 0
     skip_count = 0
@@ -1468,25 +1753,34 @@ async def amain(args):
         print(f"Menganalisis: {job['title']}")
         texts = {}
         skips = []
+        skip_reasons = []
         g_text, g_model = gemini_draft(job, job.get("matched_keywords", []), detail)
-        if g_text == "SKIP":
+        _g_skip, _g_why = _parse_skip(g_text)
+        if _g_skip:
             skips.append("Gemini")
+            if _g_why:
+                skip_reasons.append("Gemini: " + _g_why)
         elif g_text is not None:
             texts["gemini"] = (g_text, g_model)
         else:
             print(f"Draft Gemini gagal: {job['title']}")
         q_text, q_model = groq_draft(job, job.get("matched_keywords", []), detail)
-        if q_text == "SKIP":
+        _q_skip, _q_why = _parse_skip(q_text)
+        if _q_skip:
             skips.append("Groq")
+            if _q_why:
+                skip_reasons.append("Groq: " + _q_why)
         elif q_text is not None:
             texts["groq"] = (q_text, q_model)
         else:
             print(f"Draft Groq gagal: {job['title']}")
         if skips:
-            print(f"SKIP (keyword hanya numpang): {job['title']} [{', '.join(skips)}] - draft AI lain dibuang, job di-skip.")
+            print(f"SKIP (keyword hanya numpang): {job['title']} [{', '.join(skips)}] - draft AI lain dibuang, job di-skip." + (f" Alasan: {'; '.join(skip_reasons)}" if skip_reasons else ""))
             skip_count += 1
             mark_seen("seen_jobs.db", job["id"], "skipped_centrality", job["title"])
-            _record_history(run_id, run_at, job, "skipped_centrality", "SKIP oleh " + ", ".join(skips), detail, [])
+            _skip_reason = "SKIP oleh " + ", ".join(skips) + (": " + "; ".join(skip_reasons) if skip_reasons else "")
+            _record_history(run_id, run_at, job, "skipped_centrality", _skip_reason, detail, [])
+            _record_passed(run_id, run_at, job, "skipped_centrality", _skip_reason, detail, [])
             continue
         if not texts:
             print(f"Draft gagal: {job['title']}")
@@ -1505,21 +1799,16 @@ async def amain(args):
         draft_count += 1
         mark_seen("seen_jobs.db", job["id"], "drafted", job["title"])
         _record_history(run_id, run_at, job, "drafted", "", detail, [p for _, p in saved])
+        _record_passed(run_id, run_at, job, "drafted", "", detail, [p for _, p in saved])
         if not from_file:
             for label, path in saved:
-                caption = (
-                    f"Draft siap [{label}]: {job['title']}\n"
-                    f"Budget: {budget_display(job)} | {job['country']}\n"
-                    f"Client: {client_line(job, detail)}\n"
-                    f"File: {path}\n"
-                    f"Link: {_clean_url(job.get('url'))}\n"
-                    "Cek manual sebelum dipakai: preferred qualifications, budget, dan history freelancer."
-                )
+                caption = _draft_caption(job, detail, label, path)
                 if skips:
                     caption += f"\nCatatan: {', '.join(skips)} menilai keyword hanya numpang (SKIP)."
                 if telegram_send_file(path, caption) != 200:
                     telegram_send(caption)
-                discord_send_file(path, job["title"], caption)
+                _emb_desc, _emb_fields, _emb_footer = _draft_embed_parts(job, detail, label, path)
+                discord_send_file(path, job["title"], _emb_desc, fields=_emb_fields, footer=_emb_footer)
     print(
         f"Selesai. Total={len(raw_for_save)} lolos={len(new_passed)} baru={len(to_draft)} "
         f"draft={draft_count} skip_centrality={skip_count}"
@@ -1533,6 +1822,8 @@ if __name__ == "__main__":
     parser.add_argument("--limit-per-keyword", type=int, default=5)
     parser.add_argument("--search-only", action="store_true")
     parser.add_argument("--from-file", default=None)
+    parser.add_argument("--group", type=int, default=0)
+    parser.add_argument("--groups", type=int, default=3)
     _args = parser.parse_args()
     try:
         asyncio.run(amain(_args))

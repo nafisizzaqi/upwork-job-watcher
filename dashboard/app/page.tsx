@@ -1,10 +1,10 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
 type Rec = {
   run_id: string; run_at: string; job_id: string; title: string;
   country: string; budget: number | null; budget_kind: string;
-  budget_unknown: boolean; proposals_tier: string; age_hours: number | null;
+  budget_unknown: boolean; proposals_tier: string; age_hours: number | null; posted_at: string | null;
   rating: number | string | null; verification_status: string;
   keywords: string[]; url: string; verdict: string; reason: string;
   hire_rate: number | null; jobs_posted: number | null; unhired: number | null;
@@ -16,6 +16,7 @@ type RunInfo = { run_id: string; run_at: string; total: number };
 type Snap = {
   generated_at: string; history_exists: boolean; live_count: number;
   runs: RunInfo[]; selected_run: string | null; jobs: Rec[];
+  passed: Rec[];
 };
 
 const VERDICTS = [
@@ -32,14 +33,14 @@ const VERDICTS = [
 
 function badgeCls(v: string) {
   switch (v) {
-    case "drafted": return "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30";
-    case "rejected_stage1": return "bg-rose-500/15 text-rose-300 ring-rose-500/30";
-    case "rejected_stage2": return "bg-orange-500/15 text-orange-300 ring-orange-500/30";
-    case "skipped_centrality": return "bg-amber-500/15 text-amber-300 ring-amber-500/30";
-    case "draft_failed": return "bg-red-500/15 text-red-300 ring-red-500/30";
-    case "unchecked": return "bg-sky-500/15 text-sky-300 ring-sky-500/30";
-    case "passed_search_only": return "bg-violet-500/15 text-violet-300 ring-violet-500/30";
-    default: return "bg-zinc-500/15 text-zinc-300 ring-zinc-500/30";
+    case "drafted": return "bg-emerald-400/10 text-emerald-200 ring-white/[0.08]";
+    case "rejected_stage1": return "bg-rose-400/10 text-rose-200 ring-white/[0.08]";
+    case "rejected_stage2": return "bg-orange-400/10 text-orange-200 ring-white/[0.08]";
+    case "skipped_centrality": return "bg-amber-400/10 text-amber-200 ring-white/[0.08]";
+    case "draft_failed": return "bg-red-400/10 text-red-200 ring-white/[0.08]";
+    case "unchecked": return "bg-sky-400/10 text-sky-200 ring-white/[0.08]";
+    case "passed_search_only": return "bg-violet-400/10 text-violet-200 ring-white/[0.08]";
+    default: return "bg-white/[0.04] text-zinc-300 ring-white/[0.08]";
   }
 }
 
@@ -67,16 +68,29 @@ export default function Page() {
   const [draft, setDraft] = useState<{ name: string; content: string } | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [view, setView] = useState<"passed" | "runs">("runs");
+  const [passedFilter, setPassedFilter] = useState("all");
+  const [fetching, setFetching] = useState(false);
+  const [lastChecked, setLastChecked] = useState<string | null>(null);
+  const fetchSeq = useRef(0);
+  const [now, setNow] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
+    const seq = ++fetchSeq.current;
+    setFetching(true);
     try {
       const u = run ? `/api/snapshot?run=${run}` : "/api/snapshot";
       const r = await fetch(u, { cache: "no-store" });
       const j = (await r.json()) as Snap;
       setSnap(j);
       setErr("");
+      setLastChecked(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
     } catch {
       setErr("Gagal mengambil data. Pastikan npm run dev jalan.");
+    } finally {
+      setTimeout(() => {
+        if (fetchSeq.current === seq) setFetching(false);
+      }, 600);
     }
   }, [run]);
 
@@ -85,11 +99,43 @@ export default function Page() {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
+
+  useEffect(() => {
+    setNow(new Date());
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const cronCycleMs = 10 * 60 * 1000;
+  const nextCronMs = now ? Math.ceil(now.getTime() / cronCycleMs) * cronCycleMs : 0;
+  const cronLeftMs = now ? Math.max(0, nextCronMs - now.getTime()) : cronCycleMs;
+  const cronLeft = now ? `${String(Math.floor(cronLeftMs / 60000)).padStart(2, "0")}:${String(Math.floor((cronLeftMs % 60000) / 1000)).padStart(2, "0")}` : "--:--";
+  const cronProgress = now ? 1 - cronLeftMs / cronCycleMs : 0;
+  const dataAgeMin = snap && now ? (now.getTime() - Date.parse(snap.generated_at)) / 60000 : null;
+  const cronStale = dataAgeMin !== null && dataAgeMin > 15;
+
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
     for (const j of snap?.jobs ?? []) c[j.verdict] = (c[j.verdict] ?? 0) + 1;
     return c;
   }, [snap]);
+
+  const passedCounts = useMemo(() => {
+    const list = snap?.passed ?? [];
+    return {
+      total: list.length,
+      drafted: list.filter((j) => j.verdict === "drafted").length,
+      skipped: list.filter((j) => j.verdict === "skipped_centrality").length,
+    };
+  }, [snap]);
+
+  const passedJobs = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return (snap?.passed ?? []).filter(
+      (j) =>
+        (passedFilter === "all" || j.verdict === passedFilter) &&
+        (!qq || `${j.title} ${j.country} ${(j.keywords || []).join(" ")}`.toLowerCase().includes(qq))
+    );
+  }, [snap, passedFilter, q]);
 
   const jobs = useMemo(() => {
     const list = snap?.jobs ?? [];
@@ -129,10 +175,10 @@ export default function Page() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-20 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-4">
-          <h1 className="text-lg font-bold">Upwork Job Watcher</h1>
+    <div className="min-h-screen bg-[#0a0a0b] text-zinc-100">
+      <header className="sticky top-0 z-20 border-b border-white/[0.07] bg-[#0a0a0b]/80 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-4">
+          <h1 className="text-[15px] font-semibold tracking-tight">Upwork Job Watcher</h1>
           <span className="flex items-center gap-2 text-xs text-zinc-400">
             <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
             Live, update tiap 5 detik
@@ -140,13 +186,36 @@ export default function Page() {
           <span className="ml-auto text-xs text-zinc-400">
             {snap ? `Data: ${fmtTime(snap.generated_at)} WIB` : "Memuat..."}
           </span>
-          <button onClick={load} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium hover:bg-zinc-700">
+          <span className="flex items-center gap-1.5 text-xs text-zinc-400" aria-live="polite">
+            {fetching ? (
+              <>
+                <span className="h-3 w-3 animate-spin rounded-full border border-zinc-500 border-t-transparent" />
+                Mengambil data…
+              </>
+            ) : (
+              <>Cek terakhir {lastChecked ?? "—"}</>
+            )}
+          </span>
+          <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.05] px-3 py-1.5 text-xs font-medium hover:bg-white/[0.09]">
+            <span aria-hidden className={fetching || !snap ? "inline-block animate-spin" : "inline-block"}>↻</span>
             Refresh
           </button>
+          <span className="flex items-center gap-2 text-xs text-zinc-400" title="Cron jalan tiap 10 menit (:00, :10, :20, ...) selama laptop dan WSL hidup">
+            {cronStale ? (
+              <span className="text-amber-300">Data terakhir {snap ? fmtTime(snap.generated_at) : "—"} WIB, sudah {Math.floor(dataAgeMin ?? 0)} mnt — cron mungkin berhenti</span>
+            ) : (
+              <>
+                <span>Cron berikutnya {cronLeft}</span>
+                <span className="h-1 w-20 overflow-hidden rounded-full bg-white/10">
+                  <span className="block h-full bg-zinc-100 transition-[width] duration-1000" style={{ width: `${Math.round(cronProgress * 100)}%` }} />
+                </span>
+              </>
+            )}
+          </span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         {err && <p className="mb-4 rounded-lg bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{err}</p>}
         {snap && !snap.history_exists && (
           <div className="mb-4 rounded-lg bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
@@ -155,17 +224,115 @@ export default function Page() {
           </div>
         )}
 
-        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
-          {cards.map((c) => (
-            <div key={c.label} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={() => setView("passed")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "passed" ? "bg-white text-zinc-950" : "bg-transparent text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"}`}
+          >
+            Lolos ({passedCounts.total})
+          </button>
+          <button
+            onClick={() => setView("runs")}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "runs" ? "bg-white text-zinc-950" : "bg-transparent text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"}`}
+          >
+            Per jalan
+          </button>
+        </div>
+
+        {view === "passed" && (
+          <div>
+            <div className="mb-5 grid animate-fade-up grid-cols-2 gap-4 md:grid-cols-3">
+              <div className="rounded-lg border border-white/[0.07] bg-[#121214] p-5">
+                <p className="text-xs text-zinc-400">Total lolos</p>
+                <p className="mt-1 text-[28px] leading-8 font-semibold tracking-tight">{passedCounts.total}</p>
+              </div>
+              <div className="rounded-lg border border-white/[0.07] bg-[#121214] p-5">
+                <p className="text-xs text-zinc-400">Draft</p>
+                <p className="mt-1 text-[28px] leading-8 font-semibold tracking-tight">{passedCounts.drafted}</p>
+              </div>
+              <div className="rounded-lg border border-white/[0.07] bg-[#121214] p-5">
+                <p className="text-xs text-zinc-400">Skip</p>
+                <p className="mt-1 text-[28px] leading-8 font-semibold tracking-tight">{passedCounts.skipped}</p>
+              </div>
+            </div>
+
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <input
+                value={q}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
+                placeholder="Cari judul, negara, keyword..."
+                className="min-w-56 flex-1 rounded-lg border border-white/[0.14] bg-[#121214] px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+              />
+              {(["all", "drafted", "skipped_centrality"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setPassedFilter(k)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ${passedFilter === k ? "bg-zinc-100 text-zinc-900 ring-zinc-100" : "bg-[#121214] text-zinc-300 ring-zinc-700 hover:bg-white/[0.05]"}`}
+                >
+                  {k === "all" ? "Semua" : verdictLabel(k)}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-5">
+              {passedJobs.map((j, i) => (
+                <article key={j.job_id} style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }} className="rounded-lg border border-white/[0.07] bg-[#121214] p-5 animate-fade-up transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.16]">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <h2 className="max-w-2xl text-[15px] font-semibold leading-snug tracking-tight">{j.title}</h2>
+                    <span className={`inline-block shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${badgeCls(j.verdict)}`}>
+                      {verdictLabel(j.verdict)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    {j.country || "-"} · {fmtBudget(j)} · Rating {j.rating == null ? "-" : String(j.rating)} · Proposal {j.proposals_tier || "-"} · Umur {j.age_hours == null ? "-" : `${j.age_hours.toFixed(1)} jam`} · Dipost {j.posted_at ? fmtTime(j.posted_at) + " WIB" : "-"} · Lolos {fmtTime(j.run_at)} WIB
+                  </p>
+                  {(j.keywords || []).length > 0 && (
+                    <p className="mt-1 text-xs text-zinc-400">Keyword: {(j.keywords || []).join(", ")}</p>
+                  )}
+                  {j.reason && <p className="mt-1 text-xs text-amber-300">{j.reason}</p>}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {j.url && (
+                      <a href={j.url} target="_blank" rel="noreferrer" className="rounded-lg bg-white/[0.05] px-3 py-1.5 text-xs font-medium hover:bg-white/[0.09]">
+                        Buka di Upwork
+                      </a>
+                    )}
+                    <button onClick={() => { setSel(j); setDraft(null); }} className="rounded-lg bg-white/[0.05] px-3 py-1.5 text-xs font-medium hover:bg-white/[0.09]">
+                      Lihat detail
+                    </button>
+                    {(j.drafts || []).map((f) => {
+                      const base = f.split("/").pop() ?? f;
+                      const label = base.includes(".gemini.") ? "Gemini" : base.includes(".groq.") ? "Groq" : base;
+                      return (
+                        <button key={f} onClick={() => { setSel(j); openDraft(f); }} className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-zinc-950 hover:bg-zinc-200">
+                          Lihat draft {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </article>
+              ))}
+              {passedJobs.length === 0 && (
+                <p className="rounded-lg border border-white/[0.07] bg-[#121214] px-4 py-8 text-center text-sm text-zinc-400">
+                  Belum ada job lolos. Arsip ini terisi begitu ada job yang lolos filter dan dibuatkan draft atau di-skip AI.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {view === "runs" && (
+          <>
+        <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
+          {cards.map((c, i) => (
+            <div key={c.label} style={{ animationDelay: `${Math.min(i, 8) * 45}ms` }} className="rounded-lg border border-white/[0.07] bg-[#121214] p-5 animate-fade-up">
               <p className="text-xs text-zinc-400">{c.label}</p>
-              <p className="mt-1 text-2xl font-bold">{c.value}</p>
+              <p className="mt-1 text-[28px] leading-8 font-semibold tracking-tight">{c.value}</p>
             </div>
           ))}
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <select value={run ?? ""} onChange={pickRun} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm">
+          <select value={run ?? ""} onChange={pickRun} className="rounded-lg border border-white/[0.14] bg-[#121214] px-3 py-2 text-sm">
             <option value="">Jalan terakhir</option>
             {(snap?.runs ?? []).map((r) => (
               <option key={r.run_id} value={r.run_id}>
@@ -177,7 +344,7 @@ export default function Page() {
             value={q}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setQ(e.target.value)}
             placeholder="Cari judul, negara, keyword..."
-            className="min-w-56 flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
+            className="min-w-56 flex-1 rounded-lg border border-white/[0.14] bg-[#121214] px-3 py-2 text-sm outline-none placeholder:text-zinc-500"
           />
         </div>
 
@@ -189,25 +356,26 @@ export default function Page() {
               <button
                 key={v.key}
                 onClick={() => setVerdict(v.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ${active ? "bg-zinc-100 text-zinc-900 ring-zinc-100" : "bg-zinc-900 text-zinc-300 ring-zinc-700 hover:bg-zinc-800"}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ${active ? "bg-zinc-100 text-zinc-900 ring-zinc-100" : "bg-[#121214] text-zinc-300 ring-zinc-700 hover:bg-white/[0.05]"}`}
               >
                 {v.label} ({n})
               </button>
             );
           })}
         </div>
-        <div className="overflow-x-auto rounded-xl border border-zinc-800">
+        <div className="overflow-x-auto rounded-lg border border-white/[0.07]">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
-              <tr className="bg-zinc-900 text-xs uppercase tracking-wide text-zinc-400">
-                <th className="px-4 py-3">Job</th>
-                <th className="px-4 py-3">Negara</th>
-                <th className="px-4 py-3">Budget</th>
-                <th className="px-4 py-3">Tier</th>
-                <th className="px-4 py-3">Umur</th>
-                <th className="px-4 py-3">Rating</th>
-                <th className="px-4 py-3">Vonis</th>
-                <th className="px-4 py-3">Alasan</th>
+              <tr className="bg-[#121214] text-xs uppercase tracking-wide text-zinc-400">
+                <th className="px-4 py-3.5">Job</th>
+                <th className="px-4 py-3.5">Negara</th>
+                <th className="px-4 py-3.5">Budget</th>
+                <th className="px-4 py-3.5">Tier</th>
+                <th className="px-4 py-3.5">Umur</th>
+                <th className="px-4 py-3.5">Dipost</th>
+                <th className="px-4 py-3.5">Rating</th>
+                <th className="px-4 py-3.5">Vonis</th>
+                <th className="px-4 py-3.5">Alasan</th>
               </tr>
             </thead>
             <tbody>
@@ -215,18 +383,19 @@ export default function Page() {
                 <tr
                   key={j.job_id + j.run_id}
                   onClick={() => { setSel(j); setDraft(null); }}
-                  className={`cursor-pointer border-t border-zinc-800 hover:bg-zinc-900/60 ${sel?.job_id === j.job_id ? "bg-zinc-900" : ""}`}
+                  className={`cursor-pointer border-t border-white/[0.07] transition-colors hover:bg-white/[0.03] ${sel?.job_id === j.job_id ? "bg-[#121214]" : ""}`}
                 >
-                  <td className="max-w-72 px-4 py-3">
-                    <p className="truncate font-medium">{j.title}</p>
+                  <td className="max-w-72 px-4 py-3.5">
+                    <p className="line-clamp-2 font-medium leading-snug">{j.title}</p>
                     <p className="truncate text-xs text-zinc-400">{(j.keywords || []).join(", ")}</p>
                   </td>
-                  <td className="px-4 py-3">{j.country || "-"}</td>
-                  <td className="px-4 py-3">{fmtBudget(j)}</td>
-                  <td className="px-4 py-3">{j.proposals_tier || "-"}</td>
-                  <td className="px-4 py-3">{j.age_hours == null ? "-" : `${j.age_hours.toFixed(1)} jam`}</td>
-                  <td className="px-4 py-3">{j.rating == null ? "-" : String(j.rating)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3.5">{j.country || "-"}</td>
+                  <td className="px-4 py-3.5">{fmtBudget(j)}</td>
+                  <td className="px-4 py-3.5">{j.proposals_tier || "-"}</td>
+                  <td className="px-4 py-3.5">{j.age_hours == null ? "-" : `${j.age_hours.toFixed(1)} jam`}</td>
+                  <td className="whitespace-nowrap px-4 py-3.5">{j.posted_at ? fmtTime(j.posted_at) + " WIB" : "-"}</td>
+                  <td className="px-4 py-3.5">{j.rating == null ? "-" : String(j.rating)}</td>
+                  <td className="px-4 py-3.5">
                     <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${badgeCls(j.verdict)}`}>
                       {verdictLabel(j.verdict)}
                     </span>
@@ -235,32 +404,35 @@ export default function Page() {
                 </tr>
               ))}
               {jobs.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-zinc-400">Belum ada job buat filter ini.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-zinc-400">Belum ada job buat filter ini.</td></tr>
               )}
             </tbody>
           </table>
         </div>
         <p className="mt-3 text-xs text-zinc-500">Data lokal dari laptop ini. Draft tidak pernah terkirim otomatis; semua apply tetap manual di Upwork.</p>
+          </>
+        )}
       </main>
 
       {sel && (
         <>
-          <div className="fixed inset-0 z-30 bg-black/60" onClick={() => setSel(null)} />
-          <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-xl overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-5">
-            <div className="flex items-start justify-between gap-3">
+          <div className="fixed inset-0 z-30 animate-fade-in bg-black/60" onClick={() => setSel(null)} />
+          <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-xl overflow-y-auto border-l border-white/[0.07] bg-[#121214] p-5 animate-slide-in">
+            <div className="flex items-start justify-between gap-5">
               <h2 className="text-base font-bold">{sel.title}</h2>
-              <button onClick={() => setSel(null)} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700">Tutup</button>
+              <button onClick={() => setSel(null)} className="rounded-lg bg-white/[0.05] px-3 py-1.5 text-xs hover:bg-white/[0.09]">Tutup</button>
             </div>
             {sel.url && (
-              <a href={sel.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm text-sky-400 hover:underline">
+              <a href={sel.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-sm text-zinc-100 underline decoration-white/20 underline-offset-4 hover:decoration-white/40">
                 Buka di Upwork
               </a>
             )}
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
               <div><p className="text-xs text-zinc-400">Negara</p><p>{sel.country || "-"}</p></div>
               <div><p className="text-xs text-zinc-400">Budget</p><p>{fmtBudget(sel)}</p></div>
               <div><p className="text-xs text-zinc-400">Tier proposal</p><p>{sel.proposals_tier || "-"}</p></div>
               <div><p className="text-xs text-zinc-400">Umur</p><p>{sel.age_hours == null ? "-" : `${sel.age_hours.toFixed(1)} jam`}</p></div>
+              <div><p className="text-xs text-zinc-400">Dipost</p><p>{sel.posted_at ? fmtTime(sel.posted_at) + " WIB" : "-"}</p></div>
               <div><p className="text-xs text-zinc-400">Rating</p><p>{sel.rating == null ? "-" : String(sel.rating)}</p></div>
               <div><p className="text-xs text-zinc-400">Verifikasi</p><p>{sel.verification_status || "-"}</p></div>
               <div><p className="text-xs text-zinc-400">Hire rate</p><p>{sel.hire_rate == null ? "-" : `${sel.hire_rate}%`}</p></div>
@@ -281,15 +453,15 @@ export default function Page() {
                   const base = f.split("/").pop() ?? f;
                   const label = base.includes(".gemini.") ? "Gemini" : base.includes(".groq.") ? "Groq" : base;
                   return (
-                    <button key={f} onClick={() => openDraft(f)} className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-medium hover:bg-zinc-700">
+                    <button key={f} onClick={() => openDraft(f)} className="rounded-lg bg-white/[0.05] px-3 py-1.5 text-xs font-medium hover:bg-white/[0.09]">
                       Lihat draft {label}
                     </button>
                   );
                 })}
               </div>
-              {draftLoading && <p className="mt-3 text-sm text-zinc-400">Memuat draft...</p>}
+              {draftLoading && <p className="mt-3 animate-pulse text-sm text-zinc-400">Memuat draft...</p>}
               {draft && (
-                <div className="mt-3 rounded-lg border border-zinc-700 bg-zinc-950 p-4">
+                <div key={draft.name} className="mt-3 rounded-lg border border-white/[0.14] bg-[#0a0a0b] p-5 animate-fade-in">
                   <p className="mb-2 text-xs text-zinc-400">{draft.name}</p>
                   <pre className="whitespace-pre-wrap text-sm leading-relaxed">{draft.content}</pre>
                 </div>

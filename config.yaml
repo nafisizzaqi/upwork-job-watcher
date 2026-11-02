@@ -1,3 +1,6 @@
+mcp_delay_seconds: 5
+budget_per_hour: 140
+budget_per_day: 700
 poll_interval_seconds: 600
 max_jobs_per_run: 5
 dry_run: true
@@ -7,15 +10,16 @@ filters:
   location: worldwide
   job_types: [hourly, fixed]
   min_fixed_budget_usd: 100
-  min_hourly_rate_usd: 20
+  min_hourly_rate_usd: 10
   excluded_client_countries: [Pakistan, Bangladesh, Sri Lanka, India]
   max_proposals: 20
-  proposal_ranges: [less_than_5, 5_to_10, 10_to_15, 15_to_20]
-  max_job_age_hours: 1
+  proposal_ranges: [less_than_5, 5_to_10, 10_to_15, 15_to_20, 20_to_50]
+  max_job_age_hours: 3
   min_client_rating: 4.0
   max_unhired_jobs: 50
   max_detail_checks_per_run: 10
   skip_if_offered: true
+  max_search_pages: 2
 
 keywords:
   shopify:
@@ -51,6 +55,7 @@ keywords:
       graphql,
       rest api development,
     ]
+  website_builders: [wix, wix studio, wix website design, squarespace, squarespace website, squarespace developer, squarespace customization]
 blacklist:
   [
     wordpress,

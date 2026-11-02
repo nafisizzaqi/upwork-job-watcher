@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 type Rec = {
   run_id: string; run_at: string; job_id: string; title: string;
   country: string; budget: number | null; budget_kind: string;
-  budget_unknown: boolean; proposals_tier: string; age_hours: number | null;
+  budget_unknown: boolean; proposals_tier: string; age_hours: number | null; posted_at: string | null;
   rating: number | string | null; verification_status: string;
   keywords: string[]; url: string; verdict: string; reason: string;
   hire_rate: number | null; jobs_posted: number | null; unhired: number | null;
@@ -30,6 +30,14 @@ async function readLines(file: string): Promise<Rec[]> {
 export async function GET(req: Request) {
   const base = path.join(process.cwd(), "..");
   const recs = await readLines(path.join(base, "dashboard_history.jsonl"));
+  const passedRecs = await readLines(path.join(base, "passed_jobs.jsonl"));
+  const passedById = new Map<string, Rec>();
+  for (const r of [...passedRecs, ...recs]) {
+    if (r.verdict !== "drafted" && r.verdict !== "skipped_centrality") continue;
+    const cur = passedById.get(r.job_id);
+    if (!cur || r.run_at > cur.run_at) passedById.set(r.job_id, r);
+  }
+  const passed = [...passedById.values()].sort((a, b) => (a.run_at < b.run_at ? 1 : -1));
   const byRun = new Map<string, { run_at: string; jobs: Rec[] }>();
   for (const r of recs) {
     const g = byRun.get(r.run_id) ?? { run_at: r.run_at, jobs: [] };
@@ -57,5 +65,6 @@ export async function GET(req: Request) {
     runs,
     selected_run: sel?.run_id ?? null,
     jobs,
+    passed,
   });
 }
