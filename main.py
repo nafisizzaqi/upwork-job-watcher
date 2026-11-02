@@ -1827,6 +1827,21 @@ async def amain(args):
         f"Selesai. Total={len(raw_for_save)} lolos={len(new_passed)} baru={len(to_draft)} "
         f"draft={draft_count} skip_centrality={skip_count}"
     )
+    if not new_passed and not from_file:
+        _when = datetime.now().strftime("%H:%M")
+        _grp = f"Grup {args.group}/{args.groups}" if args.group else "Semua grup"
+        telegram_send(
+            "✅ SESI SELESAI\n\n"
+            "Tidak ada job bagus yang ditemukan.\n"
+            f"Total diperiksa: {len(raw_for_save)} job unik\n"
+            f"Lolos tahap 1: 0\n"
+            f"{_grp} · 🕐 {_when} WIB"
+        )
+        discord_send_embed(
+            "✅ Sesi selesai — tidak ada job bagus",
+            f"{len(raw_for_save)} job unik diperiksa · lolos tahap 1: 0 · {_grp} · {_when} WIB",
+            color=0x95A5A6,
+        )
 
 
 if __name__ == "__main__":
