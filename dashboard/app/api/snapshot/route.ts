@@ -29,8 +29,19 @@ async function readLines(file: string): Promise<Rec[]> {
 
 export async function GET(req: Request) {
   const base = path.join(process.cwd(), "..");
-  const recs = await readLines(path.join(base, "dashboard_history.jsonl"));
-  const passedRecs = await readLines(path.join(base, "passed_jobs.jsonl"));
+  let recs = await readLines(path.join(base, "dashboard_history.jsonl"));
+  let passedRecs = await readLines(path.join(base, "passed_jobs.jsonl"));
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const isStaleReject = (r: Rec) => {
+    const t = Date.parse(r.run_at);
+    const passed = r.verdict === "drafted" || r.verdict === "skipped_centrality";
+    return !passed && !Number.isNaN(t) && t < cutoff;
+  };
+  const keptRecs = recs.filter((r) => !isStaleReject(r));
+  if (keptRecs.length < recs.length) {
+    await fs.writeFile(path.join(base, "dashboard_history.jsonl"), keptRecs.map((r) => JSON.stringify(r)).join("\n") + (keptRecs.length ? "\n" : ""));
+  }
+  recs = keptRecs;
   const passedById = new Map<string, Rec>();
   for (const r of [...passedRecs, ...recs]) {
     if (r.verdict !== "drafted" && r.verdict !== "skipped_centrality") continue;
@@ -55,8 +66,14 @@ export async function GET(req: Request) {
   const jobs = sel ? byRun.get(sel.run_id)?.jobs ?? [] : [];
   let liveCount = 0;
   try {
-    const live = JSON.parse(await fs.readFile(path.join(base, "jobs_live.json"), "utf-8"));
-    liveCount = Array.isArray(live) ? live.length : (live?.jobs?.length ?? 0);
+    const livePath = path.join(base, "jobs_live.json");
+    const st = await fs.stat(livePath);
+    if (Date.now() - st.mtimeMs > 24 * 60 * 60 * 1000) {
+      await fs.unlink(livePath);
+    } else {
+      const live = JSON.parse(await fs.readFile(livePath, "utf-8"));
+      liveCount = Array.isArray(live) ? live.length : (live?.jobs?.length ?? 0);
+    }
   } catch { /* abaikan */ }
   return NextResponse.json({
     generated_at: new Date().toISOString(),

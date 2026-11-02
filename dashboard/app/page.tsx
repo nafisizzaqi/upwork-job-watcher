@@ -73,7 +73,6 @@ export default function Page() {
   const [fetching, setFetching] = useState(false);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const fetchSeq = useRef(0);
-  const [now, setNow] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
     const seq = ++fetchSeq.current;
@@ -96,22 +95,22 @@ export default function Page() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
   }, [load]);
 
-  useEffect(() => {
-    setNow(new Date());
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const cronCycleMs = 10 * 60 * 1000;
-  const nextCronMs = now ? Math.ceil(now.getTime() / cronCycleMs) * cronCycleMs : 0;
-  const cronLeftMs = now ? Math.max(0, nextCronMs - now.getTime()) : cronCycleMs;
-  const cronLeft = now ? `${String(Math.floor(cronLeftMs / 60000)).padStart(2, "0")}:${String(Math.floor((cronLeftMs % 60000) / 1000)).padStart(2, "0")}` : "--:--";
-  const cronProgress = now ? 1 - cronLeftMs / cronCycleMs : 0;
-  const dataAgeMin = snap && now ? (now.getTime() - Date.parse(snap.generated_at)) / 60000 : null;
-  const cronStale = dataAgeMin !== null && dataAgeMin > 15;
+
+
+  const latestRun = snap?.runs[0] ?? null;
+  const lastRunAgeMin = latestRun
+    ? Math.max(0, Math.floor((Date.now() - Date.parse(latestRun.run_at)) / 60000))
+    : null;
+  const lastRunHint =
+    lastRunAgeMin === null
+      ? "Belum ada jalan tercatat."
+      : lastRunAgeMin < 60
+        ? `Baru ${lastRunAgeMin} mnt lalu — belum 1 jam, tunggu dulu.`
+        : lastRunAgeMin < 120
+          ? `Sudah ${Math.floor(lastRunAgeMin / 60)} jam ${lastRunAgeMin % 60} mnt lalu — jeda 1-2 jam.`
+          : `Sudah ${Math.floor(lastRunAgeMin / 60)} jam lalu — aman dijalankan.`;
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -180,8 +179,7 @@ export default function Page() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-4">
           <h1 className="text-[15px] font-semibold tracking-tight">Upwork Job Watcher</h1>
           <span className="flex items-center gap-2 text-xs text-zinc-400">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-            Live, update tiap 5 detik
+            Manual, update saat Refresh
           </span>
           <span className="ml-auto text-xs text-zinc-400">
             {snap ? `Data: ${fmtTime(snap.generated_at)} WIB` : "Memuat..."}
@@ -200,17 +198,8 @@ export default function Page() {
             <span aria-hidden className={fetching || !snap ? "inline-block animate-spin" : "inline-block"}>↻</span>
             Refresh
           </button>
-          <span className="flex items-center gap-2 text-xs text-zinc-400" title="Cron jalan tiap 10 menit (:00, :10, :20, ...) selama laptop dan WSL hidup">
-            {cronStale ? (
-              <span className="text-amber-300">Data terakhir {snap ? fmtTime(snap.generated_at) : "—"} WIB, sudah {Math.floor(dataAgeMin ?? 0)} mnt — cron mungkin berhenti</span>
-            ) : (
-              <>
-                <span>Cron berikutnya {cronLeft}</span>
-                <span className="h-1 w-20 overflow-hidden rounded-full bg-white/10">
-                  <span className="block h-full bg-zinc-100 transition-[width] duration-1000" style={{ width: `${Math.round(cronProgress * 100)}%` }} />
-                </span>
-              </>
-            )}
+          <span className={lastRunAgeMin !== null && lastRunAgeMin < 60 ? "text-xs text-amber-300" : "text-xs text-zinc-400"}>
+            Terakhir dijalankan: {latestRun ? `${fmtTime(latestRun.run_at)} WIB` : "—"} · {lastRunHint}
           </span>
         </div>
       </header>

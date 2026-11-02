@@ -1781,6 +1781,20 @@ async def amain(args):
             _skip_reason = "SKIP oleh " + ", ".join(skips) + (": " + "; ".join(skip_reasons) if skip_reasons else "")
             _record_history(run_id, run_at, job, "skipped_centrality", _skip_reason, detail, [])
             _record_passed(run_id, run_at, job, "skipped_centrality", _skip_reason, detail, [])
+            _skip_title = job["title"]
+            _skip_country = job["country"]
+            telegram_send(
+                "⏭️ JOB DI-SKIP\n\n"
+                f"{_skip_title}\n"
+                f"{budget_label(job)} | {_skip_country}\n"
+                f"Alasan: {_skip_reason}\n"
+                "Tidak ada draft yang dibuat."
+            )
+            discord_send_embed(
+                "⏭️ Job di-skip",
+                f"{_skip_title} · {budget_label(job)} · {_skip_country}\nAlasan: {_skip_reason}",
+                color=0x95A5A6,
+            )
             continue
         if not texts:
             print(f"Draft gagal: {job['title']}")
