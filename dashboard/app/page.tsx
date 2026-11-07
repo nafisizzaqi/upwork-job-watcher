@@ -72,6 +72,7 @@ export default function Page() {
   const [passedFilter, setPassedFilter] = useState("all");
   const [fetching, setFetching] = useState(false);
   const [lastChecked, setLastChecked] = useState<string | null>(null);
+  const [draftStatus, setDraftStatus] = useState<Record<string, string>>({});
   const fetchSeq = useRef(0);
 
   const load = useCallback(async () => {
@@ -82,6 +83,13 @@ export default function Page() {
       const r = await fetch(u, { cache: "no-store" });
       const j = (await r.json()) as Snap;
       setSnap(j);
+      try {
+        const rs = await fetch("/api/draft-status", { cache: "no-store" });
+        const js = await rs.json();
+        setDraftStatus(js.statuses ?? {});
+      } catch {
+        setDraftStatus({});
+      }
       setErr("");
       setLastChecked(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
     } catch {
@@ -157,6 +165,26 @@ export default function Page() {
       setDraft({ name, content: "Gagal memuat draft." });
     }
     setDraftLoading(false);
+  }
+
+  async function setDraftMark(file: string, status: string) {
+    const name = file.split("/").pop() ?? file;
+    const next = status === (draftStatus[name] ?? "") ? "" : status;
+    setDraftStatus((prev) => {
+      const copy = { ...prev };
+      if (next) copy[name] = next;
+      else delete copy[name];
+      return copy;
+    });
+    try {
+      await fetch("/api/draft-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: name, status: next }),
+      });
+    } catch {
+      // status tetap di state lokal; tersimpan saat klik berikutnya
+    }
   }
 
   function pickRun(e: ChangeEvent<HTMLSelectElement>) {
@@ -291,9 +319,10 @@ export default function Page() {
                     {(j.drafts || []).map((f) => {
                       const base = f.split("/").pop() ?? f;
                       const label = base.includes(".gemini.") ? "Gemini" : base.includes(".groq.") ? "Groq" : base;
+                      const mark = draftStatus[base];
                       return (
                         <button key={f} onClick={() => { setSel(j); openDraft(f); }} className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-zinc-950 hover:bg-zinc-200">
-                          Lihat draft {label}
+                          Lihat draft {label}{mark ? ` ✓ ${mark}` : ""}
                         </button>
                       );
                     })}
@@ -452,6 +481,14 @@ export default function Page() {
               {draft && (
                 <div key={draft.name} className="mt-3 rounded-lg border border-white/[0.14] bg-[#0a0a0b] p-5 animate-fade-in">
                   <p className="mb-2 text-xs text-zinc-400">{draft.name}</p>
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <button onClick={() => setDraftMark(draft.name, "dibaca")} className={`rounded-md px-3 py-1.5 text-xs font-medium ${draftStatus[draft.name] === "dibaca" ? "bg-emerald-400 text-zinc-950" : "bg-white/[0.05] hover:bg-white/[0.09]"}`}>
+                      {draftStatus[draft.name] === "dibaca" ? "✓ Dibaca" : "Tandai dibaca"}
+                    </button>
+                    <button onClick={() => setDraftMark(draft.name, "dilamar")} className={`rounded-md px-3 py-1.5 text-xs font-medium ${draftStatus[draft.name] === "dilamar" ? "bg-sky-400 text-zinc-950" : "bg-white/[0.05] hover:bg-white/[0.09]"}`}>
+                      {draftStatus[draft.name] === "dilamar" ? "✓ Dilamar" : "Tandai dilamar"}
+                    </button>
+                  </div>
                   <pre className="whitespace-pre-wrap text-sm leading-relaxed">{draft.content}</pre>
                 </div>
               )}

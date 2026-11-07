@@ -37,6 +37,10 @@ blacklist:
     sales development,
     lead generation,
     GoHighLevel,
+    german-speaking,
+    german speaking,
+    deutsch,
+    fluent german,
   ]
 notifications:
   telegram_enabled: true

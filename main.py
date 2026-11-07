@@ -398,6 +398,8 @@ def parse_detail(raw):
         "hourly_max": _num_from(hourly.get("hourlyBudgetMax")),
         "preferred_countries": pref_countries,
         "location_required": loc_required,
+        "connects_cost": _num_from(d.get("connects_cost")),
+        "connects_balance": _num_from(d.get("connects_balance")),
         "raw": d,
     }
 
@@ -585,6 +587,9 @@ def _draft_caption(job, detail, label, path):
     lines.append(str(job.get("title") or ""))
     lines.append("")
     lines.append(f"💰 Budget: {budget_display(job)}")
+    cc = _fmt_g(det.get("connects_cost"))
+    if cc is not None:
+        lines.append(f"🔌 Connects: {cc}")
     lines.append(f"📍 Lokasi: {job.get('country') or '-'}")
     age = job.get("age_hours")
     if age is not None:
@@ -642,6 +647,9 @@ def _draft_embed_parts(job, detail, label, path):
     description = f"✅ Draft siap — {label_name} · {when} WIB"
     fields = []
     fields.append({"name": "Budget", "value": budget_display(job), "inline": True})
+    cc = _fmt_g(det.get("connects_cost"))
+    if cc is not None:
+        fields.append({"name": "Connects", "value": cc, "inline": True})
     fields.append({"name": "Lokasi", "value": str(job.get("country") or "-"), "inline": True})
     rating = _fmt_g(job.get("rating_num"))
     if rating is not None:
@@ -822,11 +830,11 @@ def notify_error(exc):
     if not telegram_off:
         telegram_send(
             f"Scanner error {when} WIB: {signature}\n"
-            "Jalan berikutnya otomatis coba lagi 10 menit lagi."
+            "Tidak ada jalan otomatis berikutnya. Jalankan sesi berikutnya secara manual setelah masalah diatasi."
         )
     discord_send_embed(
         "Scanner error",
-        f"{signature}\nJalan berikutnya otomatis coba lagi 10 menit lagi.",
+        f"{signature}\nTidak ada jalan otomatis berikutnya. Jalankan sesi berikutnya secara manual setelah masalah diatasi.",
         color=0xE74C3C,
     )
 
@@ -889,6 +897,7 @@ def build_prompt(job, keywords, detail):
         "(1) a required opener, such as 'start your proposal with POD' or 'include the word POD', "
         "(2) anything the client asks to include, such as experience or stores worked on, "
         "(3) screening questions the client asks applicants to answer. "
+        "Before writing, analyze the job summary into six layers: (1) the current state of the client, what they already have or are working on; (2) the problem, what is not working or not yet available; (3) the impact on the website, users, or business; (4) the desired end result; (5) the solution explicitly requested; (6) the requirements: skills, experience, tools, time, and availability. Write the proposal from that analysis, starting from the client problem, not from a list of abilities. If the summary does not establish a cause or a fact, mark it as something to investigate or ask about; never present a guess as a fact, and never promise a specific cause before inspection. "
         "If the matched keyword is only incidental to this job (a passing mention, a nice-to-have, "
         "or the job is migrating away from it), reply with exactly one line: SKIP, a colon, and one short sentence stating the single main mismatch, for example: SKIP: the core work is Meta Pixel conversion tracking, Shopify is only context. "
         "Otherwise reply with exactly four sections, each label on its own line, in this order: "
@@ -898,14 +907,14 @@ def build_prompt(job, keywords, detail):
         "If an opener is required, it goes on the very first line by itself, then a blank line, then 'Hi,'. "
         "If no opener is required, start with 'Hi,'. "
         "The opening paragraph must, within its first 250 characters, state the SOLUTION directly, "
-        "never restate the client's problem. Then a paragraph about the relevant work. "
+        "never restate the client's problem. If the client mentions urgency or availability, answer it relevantly in the opening. Then a paragraph about the relevant work. "
         "Do NOT mention portfolio, work examples, example links, or past stores anywhere in the PROPOSAL: "
         "no 'examples of my work' line, no placeholder bullets, no URLs, no passwords, no invented links. "
         "Then a paragraph of concrete steps tailored to this job's requirements, starting with checking the current setup. "
-        "Then an honest paragraph: name the strongest relevant work area plainly, then transparently disclose "
+        "The steps must follow investigate-first order: inspect and identify the cause before changing code, then fix only what was found, then test the affected behavior and run regression checks so the fix does not break other functions. Mention a skill or tool only when it connects to a requirement in this job; never list technologies for their own sake. Then an honest paragraph: name the strongest relevant work area plainly, then transparently disclose "
         "every named tool, platform, or role in the requirements that goes beyond it as not confirmed hands-on experience, "
         "and say you are willing to learn the client's workflow and follow their processes. "
-        "Do not narrate specific past projects, clients, or tasks performed; describe only what you will do for this job, and answer experience questions only with the work-area statement and the disclosure, never with a story about a past store or client. "
+        "Disclose gaps briefly and plainly; do not dwell on weaknesses or over-explain them. Do not narrate specific past projects, clients, or tasks performed; describe only what you will do for this job, and answer experience questions only with the work-area statement and the disclosure, never with a story about a past store or client. "
         "Use present or future tense only when describing capability; never use past tense such as have worked, have handled, helped, or managed to imply completed past projects. "
         "Never use the phrases 'I have experience', 'I have recent experience', or 'hands-on experience', or any sentence saying you performed specific work for a past store or client; the only experience statement allowed is 'My strongest relevant work area is ...' followed by the disclosure of what is not confirmed. "
         "Never claim years of work, past clients, results, numbers, portfolio, or certifications. "
@@ -915,9 +924,9 @@ def build_prompt(job, keywords, detail):
         "Style example (copy only its voice, never its job details): 'I can trace the four JavaScript and leftover app-code errors to their root causes, restore Add to Cart and product options, and verify the fixes against your testing checklist without disrupting other theme functionality. First, the browser console, relevant theme scripts, and leftover app code get inspected for what interferes with product interactions. Fixes stay targeted, no broad changes that could introduce new issues. Then Add to Cart, product option selection, and related interactions get tested against your checklist, with regression checks before the work counts as complete.' "
         "Budget rule: the stated budget is shown below as 'Budget: ...'. If it says 'tidak dinyatakan' (not stated), never invent a price or estimate. "
         "If the description asks for a price estimate, include the line '[Price estimate to be added during manual edit]' in the PROPOSAL and state in the EDITOR NOTE that the budget was not stated and an estimate placeholder was included. "
-        "If the description does not ask for one, do not discuss price at all; pricing can be discussed later. "
+        "If the description does not ask for one, do not discuss price at all; pricing can be discussed later. Before the closing invitation, include one or two short clarification questions, as plain sentences with no heading, when the summary leaves a genuine unknown that affects the work. Ask only what is truly unknown; never ask filler questions. "
         "Close with an invitation to discuss, then 'Best regards,' on its own line, then 'Dana'. "
-        "QUESTIONS section rules: answer every screening question found, numbered, one answer each, "
+        "Frame the proposal around what this job summary needs. Available strengths are Shopify Development, Theme Customization, Liquid, and API Integration, with Full-Stack Development, Symfony, and AI Implementation as supporting strengths. Draw on them only when the summary calls for them; never force every proposal into the same positioning. QUESTIONS section rules: answer every screening question found, numbered, one answer each, "
         "in the same honest tone as the proposal. A question about certifications is answered: "
         "'I don't hold certifications related to this project.' If no screening questions were found, write: "
         "'No screening questions were included in this job posting.' "
@@ -927,7 +936,7 @@ def build_prompt(job, keywords, detail):
         "Never invent links, URLs, passwords, store names, or results; describe only what to attach, never the items themselves. "
         "This section is only for the human editor and must never be submitted. "
         "EDITOR NOTE - DO NOT SUBMIT section rules: bullet lines listing which opener or include-instructions were obeyed, "
-        "and which gaps were disclosed. Do not repeat portfolio guidance here; portfolio belongs only in the PORTFOLIO NOTE section. "
+        "and which gaps were disclosed. Also list the key facts the summary did not establish, assumptions and unknowns, so the editor can verify them. Do not repeat portfolio guidance here; portfolio belongs only in the PORTFOLIO NOTE section. "
         "This section is only for the human editor and must never be submitted.\n\n"
         f"Job title: {job['title']}\n"
         f"Budget: {budget_txt} | Client country: {job['country']}\n"
@@ -1027,6 +1036,7 @@ def gemini_draft(job, keywords, detail):
 
 
 GROQ_MODELS = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+OPENROUTER_MODELS = ["google/gemma-4-31b-it:free", "google/gemma-4-26b-a4b-it:free", "nvidia/nemotron-3.5-lightning:free"]
 
 
 def groq_draft(job, keywords, detail):
@@ -1099,6 +1109,149 @@ def groq_draft(job, keywords, detail):
                 continue
     print(f"Groq gagal semua model: {last_err}")
     return None, None
+
+
+def openrouter_draft(job, keywords, detail):
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        print("OpenRouter: OPENROUTER_API_KEY belum diset.")
+        return None, None
+    prompt = build_prompt(job, keywords, detail)
+    last_err = None
+    for model in OPENROUTER_MODELS:
+        for attempt in range(2):
+            try:
+                r = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://github.com/nafisizzaqi/upwork-job-watcher", "X-Title": "upwork-job-watcher"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 2000,
+                        "temperature": 0.7,
+                    },
+                    timeout=120,
+                )
+                if r.status_code == 429:
+                    last_err = f"{model} 429"
+                    import time
+
+                    time.sleep(20)
+                    continue
+                if r.status_code in (400, 402, 404):
+                    last_err = f"{model} {r.status_code}"
+                    print(f"OpenRouter {model} ditolak ({r.status_code}), coba model berikut...")
+                    break
+                r.raise_for_status()
+                data = r.json()
+                ch = data["choices"][0]
+                fr = ch.get("finish_reason") or ""
+                if fr:
+                    print(f"OpenRouter {model} finish_reason: {fr}")
+                if fr == "length":
+                    last_err = f"{model} length cut"
+                    print(f"OpenRouter {model} kepotong token, coba lagi.")
+                    continue
+                text = (ch.get("message", {}).get("content") or "").strip()
+                if not text:
+                    last_err = f"{model} empty response"
+                    print(f"OpenRouter {model} mengembalikan teks kosong, coba lagi.")
+                    continue
+                _is_skip, _skip_why = _parse_skip(text)
+                if _is_skip:
+                    return ("SKIP: " + _skip_why) if _skip_why else "SKIP", model
+                if not text.startswith("PROPOSAL"):
+                    text = "PROPOSAL\n" + text
+                if not _draft_complete(text):
+                    last_err = f"{model} incomplete draft (finish_reason={fr})"
+                    print(f"OpenRouter {model} draft tidak lengkap, coba lagi.")
+                    continue
+                low = text.lower()
+                hits = [w for w in BANNED_WORDS if w in low]
+                if hits:
+                    if attempt == 0:
+                        last_err = f"{model} kata terlarang {hits}"
+                        print(f"OpenRouter {model} kena kata terlarang {hits}, coba ulang sekali.")
+                        continue
+                    print(f"Peringatan kata terlarang di draft: {hits} (tetap disimpan, cek manual).")
+                return text, model
+            except Exception as e:
+                last_err = str(e)
+                print(f"OpenRouter {model} gagal (percobaan {attempt + 1}): {e}")
+                continue
+    print(f"OpenRouter gagal semua model: {last_err}")
+    return None, None
+
+
+def verify_draft(job, detail, draft_text):
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return None
+    desc = job.get("description", "") or ""
+    if len(desc) > 4000:
+        desc = desc[:2000] + " ... " + desc[-2000:]
+    prompt = (
+        "You are checking a freelance proposal draft for invented claims. "
+        "Below is the job the proposal answers, then the draft. "
+        "List ONLY specific claims in the PROPOSAL section that assert past work, specific clients, numbers, results, or experience that the job text does not establish. "
+        "General capability statements (for example Shopify, Liquid, API work) are fine and must NOT be flagged. "
+        "Ignore the QUESTIONS and EDITOR NOTE sections. "
+        "Reply in Bahasa Indonesia. If there is nothing specific to flag, reply with exactly: OK. "
+        "Otherwise reply with one short line per claim, each starting with \"- \", quoting the claim briefly and saying why it is unsupported. "
+        "Do not rewrite the proposal. Do not add anything else.\n\n"
+        "JOB:\n"
+        "Title: " + str(job.get("title", "")) + "\n"
+        "Budget: " + budget_label(job) + "\n"
+        "Country: " + str(job.get("country", "")) + "\n"
+        "Description: " + desc + "\n\n"
+        "DRAFT:\n" + draft_text
+    )
+    model = GEMINI_MODELS[0]
+    for attempt in range(2):
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 600, "temperature": 0},
+                },
+                timeout=60,
+            )
+            if r.status_code in (429, 503):
+                import time
+
+                time.sleep(20)
+                continue
+            r.raise_for_status()
+            data = r.json()
+            cand = data["candidates"][0]
+            parts = cand.get("content", {}).get("parts") or []
+            text = "".join(p.get("text", "") for p in parts).strip()
+            if not text:
+                print("Verifikasi: jawaban kosong, lewati.")
+                return None
+            clean = text.strip().upper()
+            if clean == "OK" or clean == "OK.":
+                return None
+            return text[:1500]
+        except Exception as e:
+            print(f"Verifikasi gagal (percobaan {attempt + 1}): {e}")
+            continue
+    return None
+
+
+def attach_verification(job, detail, texts):
+    checked = {}
+    for label, (text, model) in texts.items():
+        flags = verify_draft(job, detail, text)
+        if flags:
+            checked[label] = (text.rstrip() + "\n\nVERIFIKASI (periksa manual):\n" + flags, model)
+            print(f"Verifikasi {label}: ada klaim perlu dicek.")
+        else:
+            checked[label] = (text, model)
+            print(f"Verifikasi {label}: OK.")
+    return checked
 
 
 def budget_label(job):
@@ -1292,37 +1445,10 @@ class McpSession:
         wait_for_callback = getattr(auth_mod, "wait_for_callback", None)
 
         async def redirect_handler(url):
-            print("Buka URL login Upwork di browser:")
-            print(url)
-            try:
-                import webbrowser
-
-                webbrowser.open(url)
-            except Exception:
-                pass
+            raise RuntimeError("Token Upwork gagal refresh. Jangan login di laptop ini. Ulangi flow OAuth di laptop Ilmantara (auth_setup.py) lalu salin file .upwork_token.json ke laptop ini.")
 
         async def callback_handler():
-            if wait_for_callback is not None:
-                try:
-                    res = await wait_for_callback()
-                except TypeError:
-                    res = await wait_for_callback(300)
-                if isinstance(res, (list, tuple)) and res:
-                    return (res[0], res[1] if len(res) > 1 else None)
-                code = getattr(res, "code", None)
-                state = getattr(res, "state", None)
-                if code:
-                    return (code, state)
-                raise RuntimeError("callback OAuth tidak mengembalikan authorization code")
-            for _ in range(300):
-                res = getattr(auth_mod, "_callback_result", None)
-                if res is not None:
-                    code = getattr(res, "code", None)
-                    state = getattr(res, "state", None)
-                    if code:
-                        return (code, state)
-                await asyncio.sleep(1.0)
-            raise RuntimeError("timeout menunggu callback OAuth (300 detik)")
+            raise RuntimeError("Token Upwork gagal refresh. Jangan login di laptop ini. Ulangi flow OAuth di laptop Ilmantara (auth_setup.py) lalu salin file .upwork_token.json ke laptop ini.")
 
         storage = None
         for maker in (
@@ -1561,6 +1687,155 @@ def _record_passed(run_id, run_at, job, verdict, reason, detail, drafts):
         print(f"Passed gagal dicatat: {e}")
 
 
+def detail_to_job(raw, job_id, detail):
+    d = raw if isinstance(raw, dict) else {}
+    if "client_record" not in d and isinstance(d.get("result"), dict):
+        d = d["result"]
+    data = d.get("data") or {}
+    mp = {}
+    if isinstance(data, dict):
+        mp = data.get("marketplaceJobPosting") or {}
+    if not mp:
+        mp = _pick(d, "marketplaceJobPosting") or {}
+    if not isinstance(mp, dict):
+        mp = {}
+    cr = _pick(d, "client_record", "clientRecord") or {}
+    if not isinstance(cr, dict):
+        cr = {}
+    content = mp.get("content") or {}
+    if not isinstance(content, dict):
+        content = {}
+    title = str(_pick(content, "title", "jobTitle", "name") or _pick(mp, "title") or "")
+    desc = str(_pick(content, "description", "jobDescription") or _pick(mp, "description") or "")
+    skills = mp.get("skills") or content.get("skills") or []
+    if isinstance(skills, str):
+        skills = [skills]
+    skills_text = " ".join(str(s) for s in skills)
+    ccp = mp.get("clientCompanyPublic") or {}
+    if not isinstance(ccp, dict):
+        ccp = {}
+    _cc = ccp.get("country")
+    _cc_name = _cc.get("name") if isinstance(_cc, dict) else _cc
+    country = _canonical_country(
+        _cc_name
+        or _pick(cr, "country", "countryName", "location")
+        or _pick(mp, "clientCountry", "country", "location")
+        or _pick(d, "country")
+    )
+    budget = None
+    budget_kind = "fixed"
+    hourly_min = detail.get("hourly_min")
+    hourly_max = detail.get("hourly_max")
+    if hourly_min is not None or hourly_max is not None:
+        budget_kind = "hourly"
+        budget = hourly_min if hourly_min is not None else hourly_max
+    else:
+        raw_budget = _pick(mp, "budget", "amount", "budgetAmount") or _pick(d, "budget", "amount")
+        budget = _num_from(raw_budget)
+    return {
+        "id": str(job_id),
+        "title": title,
+        "description": desc,
+        "description_snippet": "",
+        "skills": skills,
+        "skills_text": skills_text,
+        "text": " ".join([title, desc, skills_text]),
+        "job_type": "",
+        "budget": budget,
+        "budget_kind": budget_kind,
+        "country": country,
+        "rating": detail.get("feedback_score"),
+        "verification_status": None,
+        "proposals_tier": None,
+        "published_date": None,
+        "created_date": None,
+        "url": str(mp.get("url") or "").split("?")[0],
+        "connects_cost": _num_from(d.get("connects_cost")),
+        "connects_balance": _num_from(d.get("connects_balance")),
+        "raw": raw,
+    }
+
+
+async def check_job_main(job_id):
+    cfg = load_config()
+    filters = filter_settings(cfg)
+    global _mcp_delay, _budget_hour, _budget_day
+    _mcp_delay = float(cfg.get("mcp_delay_seconds", 5))
+    _budget_hour = int(cfg.get("budget_per_hour", 140))
+    _budget_day = int(cfg.get("budget_per_day", 700))
+    keywords_all = flat_keywords(cfg)
+    async with McpSession() as sess:
+        raw = await sess.get_detail(job_id)
+    detail = parse_detail(raw)
+    job = detail_to_job(raw, job_id, detail)
+    lines = []
+    lines.append("CEK JOB " + str(job_id))
+    lines.append("Judul: " + (job["title"] or "(tidak terbaca)"))
+    lines.append("Negara: " + (job["country"] or "(tidak terbaca)") + " | Budget: " + budget_label(job))
+    _cc_cost = job.get("connects_cost")
+    if _cc_cost is not None:
+        _cc_bal = job.get("connects_balance")
+        lines.append("Connects: " + ("%g" % _cc_cost) + ((" (saldo: " + ("%g" % _cc_bal) + ")") if _cc_bal is not None else ""))
+    if job["url"]:
+        lines.append("Tautan: " + job["url"])
+    reasons = []
+    low = job["text"].lower()
+    for bad in filters.get("blacklist", []) or []:
+        if str(bad).lower() in low:
+            reasons.append("blacklist: " + str(bad))
+            break
+    excluded = {_canonical_country(c) for c in (filters.get("excluded_client_countries") or [])}
+    if job["country"] and (job["country"] in excluded or job["country"].lower() in {e.lower() for e in excluded}):
+        reasons.append("negara client dikecualikan: " + job["country"].lower())
+    if job["budget"] is not None:
+        if job["budget_kind"] == "hourly" and job["budget"] < float(filters["min_hourly_rate_usd"]):
+            reasons.append("budget hourly di bawah minimum")
+        if job["budget_kind"] != "hourly" and job["budget"] < float(filters["min_fixed_budget_usd"]):
+            reasons.append("budget fixed di bawah minimum")
+    matched = matched_keywords(job, keywords_all)
+    job["matched_keywords"] = matched
+    if not matched:
+        reasons.append("tidak ada keyword config yang cocok")
+    rating = _num_from(job["rating"])
+    if rating is not None and rating < float(filters["min_client_rating"]):
+        reasons.append("rating client di bawah minimum")
+    ok2, reason2, _det2 = stage2_filter(job, detail, filters)
+    if not ok2:
+        reasons.append("tahap 2: " + reason2)
+    lines.append("Keyword cocok: " + (", ".join(matched) if matched else "-"))
+    if rating is not None:
+        lines.append("Rating client: " + str(rating))
+    if reasons:
+        lines.append("Hasil: TIDAK LOLOS")
+        for r in reasons:
+            lines.append("- " + r)
+    else:
+        lines.append("Hasil: LOLOS (dengan catatan di bawah)")
+    lines.append("Cek manual di website: jumlah proposal, umur job, status verifikasi.")
+    print("\n".join(lines))
+
+
+def prune_old_drafts(days=30):
+    try:
+        drafts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drafts")
+        cutoff = datetime.now(timezone.utc).timestamp() - days * 86400
+        removed = 0
+        for name in os.listdir(drafts_dir):
+            if not name.endswith(".txt"):
+                continue
+            path = os.path.join(drafts_dir, name)
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.remove(path)
+                    removed += 1
+            except Exception:
+                continue
+        if removed:
+            print(f"Hapus {removed} file draft lama (> {days} hari).")
+    except Exception as e:
+        print(f"Bersihkan draft lama gagal: {e}")
+
+
 async def amain(args):
     cfg = load_config()
     filters = filter_settings(cfg)
@@ -1586,6 +1861,7 @@ async def amain(args):
     enrich_limit = int(filters["max_detail_checks_per_run"])
 
     print(f"dry_run={cfg.get('dry_run', True)} | max_jobs_per_run={max_jobs} | keywords={len(keywords_all)}")
+    prune_old_drafts()
     print("Tidak ada auto-apply di kode ini. Semua draft hanya disimpan lokal.")
 
     seen, _ = load_seen()
@@ -1684,7 +1960,13 @@ async def amain(args):
                 try:
                     raw_detail = await sess.get_detail(job["id"])
                     detail = parse_detail(raw_detail)
-                except SearchRestrictedError:
+                except SearchRestrictedError as e:
+                    if "PERMISSION" in str(e):
+                        _unopen_title = job["title"]
+                        print(f"DETAIL TOLAK: {_unopen_title} | detail tidak bisa dibuka (private/invite-only?): {e}")
+                        mark_seen("seen_jobs.db", job["id"], "rejected_detail", job["title"])
+                        _record_history(run_id, run_at, job, "rejected_stage2", "detail tidak bisa dibuka (private/invite-only?)", None, [])
+                        continue
                     print("AKSES PENCARIAN DIBATASI — berhenti, jangan retry.")
                     raise
                 except Exception as e:
@@ -1800,6 +2082,7 @@ async def amain(args):
             print(f"Draft gagal: {job['title']}")
             _record_history(run_id, run_at, job, "draft_failed", "kedua AI gagal membuat draft", detail, [])
             continue
+        texts = attach_verification(job, detail, texts)
         safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", str(job["id"]))
         saved = []
         for label, (text, model) in texts.items():
@@ -1853,7 +2136,15 @@ if __name__ == "__main__":
     parser.add_argument("--from-file", default=None)
     parser.add_argument("--group", type=int, default=0)
     parser.add_argument("--groups", type=int, default=3)
+    parser.add_argument("--check-job", default=None)
     _args = parser.parse_args()
+    if _args.check_job:
+        try:
+            asyncio.run(check_job_main(_args.check_job))
+        except Exception as _exc:
+            print(f"ERROR: {_exc!r}")
+            raise SystemExit(1)
+        raise SystemExit(0)
     try:
         asyncio.run(amain(_args))
     except Exception as _exc:

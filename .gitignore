@@ -29,3 +29,5 @@ dashboard/.next/
 *.bak
 arsip/
 call_budget.json
+listener_state.json
+draft_status.json
